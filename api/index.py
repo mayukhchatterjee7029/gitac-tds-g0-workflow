@@ -25,7 +25,7 @@ def compute_metrics(regions, threshold):
     for region in regions:
         recs = [r for r in RECORDS if r.get("region") == region]
         latencies = [r["latency_ms"] for r in recs]
-        uptimes = [r["uptime"] for r in recs]
+        uptimes = [r["uptime_pct"] for r in recs]   # <-- field name from the bundle
         result[region] = {
             "avg_latency": float(np.mean(latencies)),
             "p95_latency": float(np.percentile(latencies, 95)),
@@ -35,16 +35,28 @@ def compute_metrics(regions, threshold):
     return result
 
 
-# Handle GET and POST on every possible path (/, /api, /api/index, anything).
-# This makes the endpoint immune to vercel.json routing quirks.
-@app.api_route("/{full_path:path}", methods=["GET", "POST"])
+# Content-driven handler: ANY request carrying a JSON body with "regions"
+# gets metrics back. Survives Vercel 308 trailing-slash redirects that
+# downgrade POSTs to GETs.
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "OPTIONS"])
 async def analytics(request: Request, full_path: str):
-    if request.method == "POST":
+    payload = None
+    if request.method in ("POST", "PUT"):
         try:
             payload = await request.json()
         except Exception:
-            payload = {}
+            payload = None
+    if not isinstance(payload, dict) or "regions" not in payload:
+        q = request.query_params
+        if "regions" in q:
+            payload = {
+                "regions": q["regions"].split(","),
+                "threshold_ms": float(q.get("threshold_ms", 180)),
+            }
+    if isinstance(payload, dict) and "regions" in payload:
         regions = payload.get("regions", [])
         threshold = payload.get("threshold_ms", 180)
         return compute_metrics(regions, threshold)
-    return JSONResponse({"message": "Analytics endpoint is running. POST JSON: {\"regions\": [...], \"threshold_ms\": 180}"})
+    return JSONResponse({
+        "message": "Analytics endpoint is running. POST JSON: {\"regions\": [...], \"threshold_ms\": 180}"
+    })
