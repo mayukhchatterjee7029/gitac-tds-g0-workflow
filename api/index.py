@@ -1,43 +1,44 @@
+import os
+import json
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List
-import json, os
 import numpy as np
 
 app = FastAPI()
 
+# Allow POST (and anything else) from any origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class Payload(BaseModel):
-    regions: List[str]
-    threshold_ms: float = 180
+# Load the bundled telemetry data once, at cold start
+DATA_PATH = os.path.join(os.path.dirname(__file__), "telemetry.json")
+with open(DATA_PATH) as f:
+    RECORDS = json.load(f)
 
-# Load telemetry (adjust to how you stored it)
-TELEMETRY = json.load(open(os.path.join(os.path.dirname(__file__), "telemetry.json")))
-# If telemetry.json is a dict with a "records" or similar key, drill into it here.
+@app.get("/")
+def read_root():
+    return {"message": "Analytics endpoint is running. POST JSON: {\"regions\": [...], \"threshold_ms\": 180}"}
 
-@app.post("/analytics")
-def analytics(payload: Payload):
+@app.post("/")
+def analytics(payload: dict):
+    regions = payload.get("regions", [])
+    threshold = payload.get("threshold_ms", 180)
+
     result = {}
-    for region in payload.regions:
-        rows = [r for r in TELEMETRY if r["region"] == region]
-        if not rows:
-            result[region] = {"avg_latency": None, "p95_latency": None,
-                              "avg_uptime": None, "breaches": 0}
-            continue
-        lat = [r["latency_ms"] for r in rows]
-        up  = [r["uptime"] for r in rows]
+    for region in regions:
+        recs = [r for r in RECORDS if r.get("region") == region]
+        latencies = [r["latency_ms"] for r in recs]
+        uptimes = [r["uptime"] for r in recs]
+
         result[region] = {
-            "avg_latency": round(float(np.mean(lat)), 2),
-            "p95_latency": round(float(np.percentile(lat, 95)), 2),
-            "avg_uptime":  round(float(np.mean(up)), 2),
-            "breaches":    sum(1 for x in lat if x > payload.threshold_ms),
+            "avg_latency": float(np.mean(latencies)),
+            "p95_latency": float(np.percentile(latencies, 95)),
+            "avg_uptime": float(np.mean(uptimes)),
+            "breaches": int(sum(1 for x in latencies if x > threshold)),
         }
     return result
