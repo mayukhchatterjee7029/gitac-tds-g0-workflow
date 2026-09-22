@@ -1,7 +1,4 @@
 {
-  "version": 2,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.py" }
-  ],
+  "version": 2, 
   "trailingSlash": false
 }
