@@ -67,5 +67,5 @@ async def analytics(request: Request, full_path: str):
         threshold = payload.get("threshold_ms", 180)
         return compute_metrics(regions, threshold)
     return JSONResponse({
-        "message": "Analytics endpoint is running. POST JSON: {\"regions\": [...], \"threshold_ms\": 180}"
+        "message": "Analytics endpoint v3 (CORS forced) is running. POST JSON: {\"regions\": [...], \"threshold_ms\": 180}"
     })
